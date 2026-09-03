@@ -1,96 +1,108 @@
-<<<<<<< HEAD
-# Undertow — AI Revenue Recovery
+# Undertow
 
-An agent that detects revenue at risk, diagnoses why it's leaking, decides the
-right intervention, and executes a bounded, compliant recovery workflow —
-with a full audit trail and measured outcomes across a batch.
+**An AI agent that catches revenue before it slips away — figures out why a payment or invoice failed, decides what to do about it, and runs a bounded, compliant recovery workflow with a full audit trail.**
 
-Covers all six example directions from the brief:
-- **Payment failure** → root cause → recovery action (soft decline, expired card, insufficient funds, processor glitch, suspected fraud)
-- **Checkout abandonment** recovery (OTP drop, shipping-cost shock, payment-field friction, price hesitation)
-- **Failed-subscription (dunning)** recovery
-- **B2B receivables chasing**, including a promise-to-pay tracker
-- **Mandate retry sequencer** — lapsed UPI Autopay mandates get their own re-authorization flow instead of a plain card retry
-- **Hinglish voice recovery** — repeated touches to Hinglish-speaking customers escalate from text to a logged IVR call transcript, still with an explicit opt-out
+---
 
-This is a self-contained, click-to-run **prototype**: everything (data,
-messaging, outcomes) is simulated client-side so it's honest about what's
-real and what's a stand-in, and so it's trivial to run and deploy with zero
-backend or API keys.
+## What it does
 
-## Run it
+Revenue leaks in a handful of predictable ways: a card payment fails, a checkout gets abandoned halfway through, a subscription renewal bounces, or a B2B invoice just sits there overdue. Undertow runs every one of those events through the same pipeline — detect → diagnose → decide → execute — with a compliance layer that can veto any step, and an audit trail that logs everything the agent did and why.
 
-```bash
+Run a live batch of 42 synthetic cases and you can actually watch it work: root-cause diagnosis streams into a live ledger in real time, stopping rules get checked before a single message goes out, and the dashboard tracks revenue recovered, escalated, and suppressed — not just "processed."
+
+*(Add a screenshot of the running dashboard here before publishing — run `npm run dev`, click "Run a live batch," and drop the image in.)*
+
+## Why I built it this way
+
+Most agent demos boil down to a chat window and a system prompt. I wanted this one to actually hold up like the real thing would need to: a decision engine where compliance checks run before the "smart" logic, not after; a deterministic simulation so a run is reproducible instead of just plausible-looking; and a clear line between what's simulated and what's a real integration point, so swapping in a real payment webhook later doesn't mean rewriting the reasoning.
+
+## Features
+
+- Four leak types, one pipeline — payment failures, checkout abandonment, subscription dunning, and overdue B2B receivables all flow through the same engine.
+- Explainable diagnosis — every case gets a labeled root cause with a confidence score and a plain-language reason, not just a status badge.
+- Compliance-first decisioning — do-not-contact, quiet hours, a 3-touch cap, and mandatory human escalation for fraud or disputes are checked before the "best action" logic runs, and they always win.
+- Live audit ledger — every detect/diagnose/decide/execute/stop/resolve event streams in real time and is fully inspectable per case.
+- India-specific recovery paths — a dedicated UPI Autopay mandate re-authorization sequence, plus Hinglish messaging that escalates from text to a logged IVR voice-call transcript if the customer doesn't respond.
+- Deterministic simulation — a seeded PRNG means a given run is fully reproducible, which matters if you're calling something an audit trail.
+- Zero-backend deployable — static build, no API keys, no database. Clone it and it runs in under a minute.
+
+## Quick start
+
+```
+git clone https://github.com/<your-username>/undertow.git
+cd undertow
 npm install
-npm run dev       # local dev server
-npm run build     # production build -> dist/
-npm run preview   # serve the production build locally
+npm run dev
 ```
 
-## Deploy it
+Open the local URL it prints and click "Run a live batch of 42 cases."
 
-The app is a static site (Vite build output in `dist/`) — no server or
-environment variables required.
+```
+npm run build     # production build -> dist/
+npm run preview   # serve that build locally
+```
 
-- **Vercel**: import the repo, framework preset "Vite" is auto-detected, or use the included `vercel.json`.
-- **Netlify**: `netlify.toml` is included — drag-and-drop `dist/` or connect the repo.
-- **Any static host** (S3+CloudFront, GitHub Pages, Cloudflare Pages): serve the contents of `dist/` after `npm run build`.
-
-## How it works
-
-Click **"Run a live batch of 42 cases"**. The agent runs a deterministic
-(seeded) simulation through four stages for every case, and streams the
-result into the audit ledger in real time:
-
-1. **Detect** — a synthetic batch of leak events is generated (`src/data/generator.ts`).
-2. **Diagnose** — rules map observed signals (decline code, drop-off stage,
-   overdue days, failed-cycle count) to a labeled root cause with a
-   confidence score (`src/engine/diagnose.ts`).
-3. **Decide** — the root cause maps to an intervention, but **stopping
-   rules are checked first and always win**: do-not-contact customers are
-   never messaged, nothing goes out during quiet hours, no case is
-   contacted more than 3 times, and ambiguous/sensitive cases (suspected
-   fraud, disputed invoices) are routed to a human instead of being
-   auto-messaged (`src/engine/decide.ts`).
-4. **Execute** — the chosen message is composed (including Hinglish
-   variants for `hi-en` locale customers, per the brief's "Hinglish voice
-   recovery" direction) and an outcome is simulated, weighted by the
-   case's risk score and how well-matched the action is
-   (`src/engine/execute.ts`, `src/engine/messages.ts`).
-
-Every step of every case is written to an immutable audit log
-(`src/engine/runBatch.ts`) that the UI both streams live (the ledger) and
-lets you inspect per-case (click any row in the case table).
-
-## From prototype to production
-
-The architecture is deliberately split so the simulated parts are easy to
-swap for real integrations without touching the diagnosis/decision logic:
-
-| Layer | Prototype (this repo) | Production swap-in |
-|---|---|---|
-| Case detection | `generateBatch()` synthetic data | Webhooks from Stripe/Adyen/your PSP, cart/analytics events, subscription billing events, AR aging from your ledger |
-| Diagnosis | Rule table in `diagnose.ts` | Same shape, backed by richer signals (issuer response codes, historical retry success by BIN, NLP on invoice correspondence) |
-| Decision | Rule table + stopping rules in `decide.ts` | Same interface — the stopping-rule logic (rate limits, quiet hours, opt-out, escalation triggers) should stay server-side and authoritative regardless of what calls it |
-| Execution | `execute()` simulates an outcome | Real send via email/SMS/WhatsApp provider + real retry via your PSP, with the actual response (delivered, paid, bounced) replacing the simulated roll |
-| Audit trail | In-memory array | Append-only store (e.g. Postgres table or event log) — the schema in `types.ts` (`AuditEntry`) is already shaped for this |
-
-## Project structure
+## Architecture
 
 ```
 src/
-  engine/       diagnosis, decision, execution, orchestration, types
-  data/         synthetic case generator
-  store/        zustand store driving the live-run UI
-  components/   dashboard UI
+├── engine/
+│   ├── types.ts        Domain model: RevenueCase, RootCause, ActionType, AuditEntry
+│   ├── diagnose.ts      Signal -> root cause, with confidence + reasoning
+│   ├── decide.ts        Root cause -> action, gated by stopping rules
+│   ├── execute.ts       Simulated outcome, weighted by risk score + action fit
+│   ├── messages.ts      Channel + copy per action (incl. Hinglish/voice variants)
+│   ├── runBatch.ts      Orchestrates the full pipeline, builds the audit trail
+│   └── rng.ts           Seeded PRNG for reproducible runs
+├── data/
+│   └── generator.ts     Synthetic case generator (all 4 leak types)
+├── store/
+│   └── useBatchStore.ts Zustand store; streams the audit log into the UI
+└── components/          Dashboard, ledger, case table/drawer, compliance panel
 ```
 
-## Stack
+Pipeline for a single case: a leak event is detected, diagnosed into a root cause with a confidence score, run through stopping rules (opt-out, quiet hours, touch cap, escalation) before any action is chosen, and then executed — with an audit entry logged at every single stage.
 
-Vite + React + TypeScript + Tailwind CSS + Zustand + Recharts. No backend,
-no API keys, no database — intentionally, so anyone can clone and run this
-in under a minute.
-=======
-# Undertow
-An AI Revenue Recovery System
->>>>>>> ec961d52684a7a5e5d682b9d8882e04ffdbbd085
+## Engineering decisions
+
+A few choices worth explaining, since they're the parts I'd actually want to talk through in a review:
+
+- Stopping rules run before the decision logic, not after. `decide()` checks do-not-contact, quiet hours, and the touch cap first, and returns early if any of them fire — the "best action" cause-to-action table never even runs in that case. That's how I'd want compliance to actually work: a gate, not a filter you bolt on afterward.
+- Diagnosis and message copy are kept decoupled from case type where it matters. Checkout payment-field friction and a stale subscription card look similar at a glance but need very different messages. They're modeled as distinct root causes so the copy stays correct. This was a real bug I caught while testing — an earlier version was routing checkout-abandonment cases into subscription-renewal language, which would've been a genuinely bad customer experience if it were live.
+- The simulation is seeded, not random. A batch run is fully reproducible from its seed, which is necessary if you're calling the output an audit trail. It also makes the whole engine testable headless — every function in the engine folder is pure, no DOM dependency.
+- Voice isn't just a label. Repeated touches to Hinglish-speaking customers escalate from WhatsApp/SMS to a logged IVR call transcript, because that's a materially different (and more realistic for the Indian market) recovery pattern than just switching the language in a text message.
+- The line between "simulated" and "real" is deliberate, not blurry. `execute()` is the only function that fakes an outcome. Everything upstream of it — detection shape, diagnosis rules, decision gating — is written the way it would be in production, so plugging in a real payment webhook later shouldn't require touching the reasoning logic at all.
+
+## From prototype to production
+
+- Detection: synthetic data generator now → Stripe/Adyen webhooks, cart/analytics events, subscription billing events, ERP-fed AR aging in production
+- Diagnosis: rule table now → same interface with richer signals (issuer response codes, historical retry success, NLP on invoice correspondence)
+- Decision: rule table + stopping rules now → same interface, but stopping-rule logic should live server-side and stay authoritative regardless of who calls it
+- Execution: simulated outcome now → real send via Twilio/SendGrid + real retry via the payment processor, with actual delivery/payment status replacing the simulated dice roll
+- Audit trail: in-memory array now → append-only store (Postgres table or event log)
+
+## Tech stack
+
+Vite, React 18, TypeScript (strict), Tailwind CSS, Zustand, Recharts, Lucide.
+
+No backend, no database, no API keys — the whole app is a static bundle. That was a deliberate constraint so anyone can clone and run it in under a minute instead of hunting for env vars.
+
+## Deployment
+
+Static build, deployable anywhere: Vercel (vercel.json included), Netlify (netlify.toml included), or any static host like S3+CloudFront, GitHub Pages, or Cloudflare Pages after `npm run build`.
+
+## Roadmap
+
+- Swap `execute()` for real Twilio/SendGrid sends behind a feature flag
+- Persist the audit trail to Postgres instead of an in-memory array
+- Add a Playwright test suite covering the full pipeline end-to-end
+- Replace the ambiguous-case diagnosis rules with an LLM-assisted classifier
+
+## License
+
+MIT.
+
+---
+
+Built as a prototype exploring agentic workflows for financial recovery. All customer data, invoices, and messages in this demo are synthetic — nothing is actually sent and no payments are actually processed.
+
