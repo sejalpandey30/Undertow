@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Undertow — AI Revenue Recovery
 
 An agent that detects revenue at risk, diagnoses why it's leaking, decides the
@@ -89,3 +90,7 @@ src/
 Vite + React + TypeScript + Tailwind CSS + Zustand + Recharts. No backend,
 no API keys, no database — intentionally, so anyone can clone and run this
 in under a minute.
+=======
+# Undertow
+An AI Revenue Recovery System
+>>>>>>> ec961d52684a7a5e5d682b9d8882e04ffdbbd085
